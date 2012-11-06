@@ -23,21 +23,53 @@ s.list()        { s_list_services "list"; }
 s.log()         { s_journalctl "$@"; }
 s.tree()        { s_exec "systemd-cgls --all"; }
 
-# $1: unit name
-# $2: optional suffix. It must not have a preceeding dot. Default one is .service
-s_append_type() {
-	defType=".${2:-service}"
-	if [[ ! $1 =~ \. ]]; then
-		echo "$1$defType"
-	else
-		echo "$1"
+# Function to unify regex matching, so we don't have to duplicate
+# the regular expression. It returns the success of failure in matching $1
+# $1: unit name to match 
+s_match_unit_name() {
+	# ^([^@.]*)(@([^.]*))?(\.(.*))?$
+	# ([^@.]*) = matches any starting character that is not a @ and a .
+	#            This is the unit name, per se.
+	# (@([^.]*))? = matches any template parameter, if present.
+	# (\.(.*))? = matches the service type, if present.
+	# The array BASH_REMATCH will be fileed with the following elements,
+	# if the match happens:
+	# 0: the whole unit name
+	# 1: the basic unit name
+	# 2: @<template parameter>
+	# 3: <template parameter>
+	# 4: .<unit type>
+	# 5: <unit type>
+	[[ "$1" =~ ^([^@.]*)(@([^.]*))?(\.(.*))?$ ]]
+}
+
+# $1 unit name, with possible type
+# $2 default unit type, to be returned if not found in $1
+s_get_unit_type() {
+	local defType=${2:-service}
+	if s_match_unit_name "$1"; then
+		echo "${BASH_REMATCH[5]:-$defType}"
+	fi
+}
+
+# $1 unit name, with possible template parameter
+s_get_template_parameter() {
+	if s_match_unit_name "$1"; then
+		echo "${BASH_REMATCH[3]}"
+	fi
+}
+
+# $1 input unit name, with possible "address" and type
+s_get_unit_name() {
+	if s_match_unit_name "$1"; then
+		echo "${BASH_REMATCH[1]}"
 	fi
 }
 
 s_systemctl() {
 	unitType=${3:-service}
 	daemon="$(s_append_type $2 $unitType)"
-	if [[ "$daemon" == "" || $(s_daemon_exists $daemon $unitType) ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon does not exist\e[0m"; return; fi
+	if [[ $(s_daemon_exists $daemon $unitType) == 1 ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon does not exist\e[0m"; return; fi
 	s_exec "/bin/true" # if sudo then ask for password now to avoid messing up the output later
 	case $1 in
 		start|stop|restart|reload)
@@ -80,7 +112,7 @@ s_systemctl() {
 
 s_journalctl() {
 	daemon="$(s_append_type ${@:$#})"
-	if s_daemon_exists "${daemon}"; then
+	if $(s_daemon_exists "${daemon}") == 0; then
 		options=""; for ((i=1; i<$#; ++i )) ; do options="${options}""${!i}"" "; done
 		s_exec "${_journalctl} --all $options _SYSTEMD_UNIT=${daemon}";
 	else
@@ -147,7 +179,7 @@ s_list_services () { $_systemctl --no-legend -t service list-unit-files | grep -
 # $1: Optional type of unit. The default is service
 s_daemon_exists() {
 	unitType="${2:-service}"
-	if ${_systemctl} --no-legend -t "$unitType" list-unit-files | grep -v static | grep -q "^${1%%@*}@*\.$unitType" >& /dev/null; then return 0; else return 1; fi
+	if ${_systemctl} --no-legend -t "$unitType" list-unit-files | grep -v static | grep -q "^${1%%@*}@*\.$unitType" >& /dev/null; then echo 0; else echo 1; fi
 }
 
 s_msg() {
