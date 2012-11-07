@@ -27,7 +27,7 @@ s.tree()        { s_exec "systemd-cgls --all"; }
 # the regular expression. It returns the success of failure in matching $1
 # $1: unit name to match 
 s_match_unit_name() {
-	# ^([^@.]*)(@([^.]*))?(\.(.*))?$
+	# ^(([^@.]*)(@([^.]*))?)(\.(.*))?$
 	# ([^@.]*) = matches any starting character that is not a @ and a .
 	#            This is the unit name, per se.
 	# (@([^.]*))? = matches any template parameter, if present.
@@ -35,12 +35,13 @@ s_match_unit_name() {
 	# The array BASH_REMATCH will be fileed with the following elements,
 	# if the match happens:
 	# 0: the whole unit name
-	# 1: the basic unit name
-	# 2: @<template parameter>
-	# 3: <template parameter>
-	# 4: .<unit type>
-	# 5: <unit type>
-	[[ "$1" =~ ^([^@.]*)(@([^.]*))?(\.(.*))?$ ]]
+	# 1: the unit name, with possible template parameter
+	# 2: the basic unit name, without parameter
+	# 3: @<template parameter>
+	# 4: <template parameter>
+	# 5: .<unit type>
+	# 6: <unit type>
+	[[ "$1" =~ ^(([^@.]*)(@([^.]*))?)(\.(.*))?$ ]]
 }
 
 # $1 unit name, with possible type
@@ -48,17 +49,18 @@ s_match_unit_name() {
 s_get_unit_type() {
 	local defType=${2:-service}
 	if s_match_unit_name "$1"; then
-		echo "${BASH_REMATCH[5]:-$defType}"
+		echo "${BASH_REMATCH[6]:-$defType}"
 	fi
 }
 
 # $1 unit name, with possible template parameter
 s_get_template_parameter() {
 	if s_match_unit_name "$1"; then
-		echo "${BASH_REMATCH[3]}"
+		echo "${BASH_REMATCH[4]}"
 	fi
 }
 
+# Returns the pure unit name and optional template parameter
 # $1 input unit name, with possible "address" and type
 s_get_unit_name() {
 	if s_match_unit_name "$1"; then
@@ -66,9 +68,17 @@ s_get_unit_name() {
 	fi
 }
 
+# Returns the unit name, without any template parameter and unit type
+s_get_basic_unit_name() {
+	if s_match_unit_name "$1"; then
+		echo "${BASH_REMATCH[2]}"
+	fi
+}
+
 s_systemctl() {
-	unitType=${3:-service}
-	daemon="$(s_append_type $2 $unitType)"
+	unitType="$(s_get_unit_type $2 $3)"
+	unitName="$(s_get_unit_name $2)"
+	daemon="$unitName.$unitType"
 	if [[ $(s_daemon_exists $daemon $unitType) == 1 ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon does not exist\e[0m"; return; fi
 	s_exec "/bin/true" # if sudo then ask for password now to avoid messing up the output later
 	case $1 in
@@ -90,9 +100,8 @@ s_systemctl() {
 			if [[ $? -eq 0 ]]; then s_msg $daemon $cols 7 "DONE"; else s_msg $daemon $cols 1 "FAIL"; s_systemctl "status" $daemon; fi
 			;;
 		enable|disable)
-			if [[ "${daemon%%@*}" == "${daemon}" ]]; then # sadly is-enabled does not work as expected for "@" services like dhcpcd@eth0
-				${_systemctl} -q is-enabled "${daemon}" >& /dev/null
-				if [[ $? -eq 0 ]]; then
+			if [[ ! "${daemon}" =~ @ ]]; then # sadly is-enabled does not work as expected for "@" services like dhcpcd@eth0
+				if ${_systemctl} -q is-enabled "${daemon}" >& /dev/null; then
 					if [[ "$1" == "enable" ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon is already enabled\e[0m"; return; fi
 				else
 					if [[ "$1" == "disable" ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon is not enabled\e[0m"; return; fi
@@ -111,8 +120,10 @@ s_systemctl() {
 }
 
 s_journalctl() {
-	daemon="$(s_append_type ${@:$#})"
-	if $(s_daemon_exists "${daemon}") == 0; then
+	unitType="$(s_get_unit_type $2)"
+	unitName="$(s_get_unit_name $2)"
+	daemon="$unitName.$unitType"
+	if [[ $(s_daemon_exists "${daemon}" $unitType) == 0 ]]; then
 		options=""; for ((i=1; i<$#; ++i )) ; do options="${options}""${!i}"" "; done
 		s_exec "${_journalctl} --all $options _SYSTEMD_UNIT=${daemon}";
 	else
@@ -128,7 +139,7 @@ s_list_services () { $_systemctl --no-legend -t service list-unit-files | grep -
 				if [[ -h "/usr/lib/systemd/system/$service" ]]; then continue; fi
 				
 				# support for "@" stuff like dhcpcd@eth0 dhcpcd@eth1 ...
-				daemon="$(s_append_type ${service})"
+				daemon="${service}"
 				if [[ "${daemon:${#daemon}-1}" == "@" ]]; then
 					if s_hidedaemon ${daemon}; then continue; fi;
 					daemons=$(${_systemctl} --no-legend -t service | grep -o "${daemon}[A-Za-z0-9_/=:-]*")
@@ -178,8 +189,9 @@ s_list_services () { $_systemctl --no-legend -t service list-unit-files | grep -
 
 # $1: Optional type of unit. The default is service
 s_daemon_exists() {
-	unitType="${2:-service}"
-	if ${_systemctl} --no-legend -t "$unitType" list-unit-files | grep -v static | grep -q "^${1%%@*}@*\.$unitType" >& /dev/null; then echo 0; else echo 1; fi
+	unitType="$(s_get_unit_type $1 ${2:-service})"
+	baseName="$(s_get_basic_unit_name $1)"
+	if ${_systemctl} --no-legend -t "$unitType" list-unit-files | grep -v static | (grep -Eq "^$baseName(@.*)?\.$unitType" >& /dev/null); then echo 0; else echo 1; fi
 }
 
 s_msg() {
