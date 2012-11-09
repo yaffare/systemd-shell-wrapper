@@ -120,8 +120,8 @@ s_systemctl() {
 }
 
 s_journalctl() {
-	unitType="$(s_get_unit_type $2)"
-	unitName="$(s_get_unit_name $2)"
+	unitType="$(s_get_unit_type $1)"
+	unitName="$(s_get_unit_name $1)"
 	daemon="$unitName.$unitType"
 	if [[ $(s_daemon_exists "${daemon}" $unitType) == 0 ]]; then
 		options=""; for ((i=1; i<$#; ++i )) ; do options="${options}""${!i}"" "; done
@@ -208,14 +208,14 @@ s_hidedaemon() {
 
 # $1: optional type
 s_bashcompletion_list_by_type () { 
-	unitType=${1:-service}
+	unitType=$(get_unity_type "$1" service)
 	${_systemctl} --no-legend -t $unitType list-unit-files  \
 		|	{ while read -r a b  ; do printf "%s\n" "${a}"; done; }
 }
 
 s_bashcompletion () {
 	local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]}
-   local verb comps
+	local verb comps
 	
 	if [[ "${1}" == "targets" ]]; then comps=$( s_bashcompletion_list_by_type "target" );	else comps=$( s_list_services "${1}" ); fi
 	COMPREPLY=( $(compgen -W '$comps' -- "$cur") )
