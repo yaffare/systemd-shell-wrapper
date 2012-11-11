@@ -21,7 +21,8 @@ s.wants()       { $_systemctl show -p "Wants" $1; }
 s.logsize()     { s_exec "${_journalctl}"" --disk-usage"; }
 s.list()        { s_list_services "list"; }
 s.log()         { s_journalctl "$@"; }
-s.tree()        { s_exec "systemd-cgls --all"; }
+s.tree()        { s_exec "/usr/bin/systemd-cgls --all"; }
+s.logtruncate() { s_exec "${_systemctl}"" start systemd-journal-flush.service"; s_exec "/bin/rm /var/log/journal/""$(cat /etc/machine-id)""/system@*"; s_exec "${_systemctl}"" kill --kill-who=main --signal=SIGUSR2 systemd-journald.service"; }
 
 # Function to unify regex matching, so we don't have to duplicate
 # the regular expression. It returns the success of failure in matching $1
