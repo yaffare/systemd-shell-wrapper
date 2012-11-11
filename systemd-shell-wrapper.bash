@@ -80,39 +80,39 @@ s_systemctl() {
 	unitType="$(s_get_unit_type $2 $3)"
 	unitName="$(s_get_unit_name $2)"
 	daemon="$unitName.$unitType"
-	if [[ $(s_daemon_exists $daemon $unitType) == 1 ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon does not exist\e[0m"; return; fi
+	if [[ $(s_daemon_exists $daemon $unitType) == 1 ]]; then echo -e "\e[1;31m:: \e[1;37m ${daemon/.service/} daemon does not exist\e[0m"; return; fi
 	s_exec "/bin/true" # if sudo then ask for password now to avoid messing up the output later
 	case $1 in
 		start|stop|restart|reload)
 			systemctl -q is-active "${daemon}" >& /dev/null
 			if [[ $? -eq 0 ]]; then
-				if [[ "$1" == "start" ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon is already running\e[0m"; return; fi
+				if [[ "$1" == "start" ]]; then echo -e "\e[1;31m:: \e[1;37m ${daemon/.service/} daemon is already running\e[0m"; return; fi
 			else
 				if [[ "$1" != "start" ]]; then
-					echo -e "\e[1;31m:: \e[1;37m $daemon daemon is not running\e[0m"; 
+					echo -e "\e[1;31m:: \e[1;37m ${daemon/.service/} daemon is not running\e[0m"; 
 					if [[ "$1" != "restart" ]]; then return; fi
 				fi
 			fi
-			if [[ "$1" == "start" ]];   then echo -en "\e[1;34m:: \e[1;37m Starting $daemon daemon\e[0m"; cols=25; fi
-			if [[ "$1" == "stop" ]];    then echo -en "\e[1;34m:: \e[1;37m Stopping $daemon daemon\e[0m"; cols=25; fi
-			if [[ "$1" == "restart" ]]; then echo -en "\e[1;34m:: \e[1;37m Restarting $daemon daemon\e[0m"; cols=27; fi
-			if [[ "$1" == "reload" ]];  then echo -en "\e[1;34m:: \e[1;37m Reloading $daemon daemon\e[0m"; cols=26; fi
+			if [[ "$1" == "start" ]];   then echo -en "\e[1;34m:: \e[1;37m Starting ${daemon/.service/} daemon\e[0m"; cols=25; fi
+			if [[ "$1" == "stop" ]];    then echo -en "\e[1;34m:: \e[1;37m Stopping ${daemon/.service/} daemon\e[0m"; cols=25; fi
+			if [[ "$1" == "restart" ]]; then echo -en "\e[1;34m:: \e[1;37m Restarting ${daemon/.service/} daemon\e[0m"; cols=27; fi
+			if [[ "$1" == "reload" ]];  then echo -en "\e[1;34m:: \e[1;37m Reloading ${daemon/.service/} daemon\e[0m"; cols=26; fi
 			s_exec "${_systemctl} -q ${1} ${daemon}"
-			if [[ $? -eq 0 ]]; then s_msg $daemon $cols 7 "DONE"; else s_msg $daemon $cols 1 "FAIL"; s_systemctl "status" $daemon; fi
+			if [[ $? -eq 0 ]]; then s_msg ${daemon/.service/} $cols 7 "DONE"; else s_msg ${daemon/.service/} $cols 1 "FAIL"; s_systemctl "status" $daemon; fi
 			;;
 		enable|disable)
 			if [[ ! "${daemon}" =~ @ ]]; then # sadly is-enabled does not work as expected for "@" services like dhcpcd@eth0
 				if ${_systemctl} -q is-enabled "${daemon}" >& /dev/null; then
-					if [[ "$1" == "enable" ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon is already enabled\e[0m"; return; fi
+					if [[ "$1" == "enable" ]]; then echo -e "\e[1;31m:: \e[1;37m ${daemon/.service/} daemon is already enabled\e[0m"; return; fi
 				else
-					if [[ "$1" == "disable" ]]; then echo -e "\e[1;31m:: \e[1;37m $daemon daemon is not enabled\e[0m"; return; fi
+					if [[ "$1" == "disable" ]]; then echo -e "\e[1;31m:: \e[1;37m ${daemon/.service/} daemon is not enabled\e[0m"; return; fi
 				fi
 			fi
 			f=${1:0:1}
-			echo -en "\e[1;34m:: \e[1;37m ""${f^^}""${1:1:${#1}-2}""ing $daemon daemon\e[0m"
+			echo -en "\e[1;34m:: \e[1;37m ""${f^^}""${1:1:${#1}-2}""ing ${daemon/.service/} daemon\e[0m"
 			if [[ "$1" == "enable" ]]; then cols=25; else cols=26; fi
 			s_exec "${_systemctl} -q ${1} ${daemon}"
-			if [[ $? -eq 0 ]]; then s_msg $daemon $cols 7 "DONE"; else s_msg $daemon $cols 1 "FAIL"; fi
+			if [[ $? -eq 0 ]]; then s_msg ${daemon/.service/} $cols 7 "DONE"; else s_msg ${daemon/.service/} $cols 1 "FAIL"; fi
 			;;
 		status)	
 			${_systemctl} status ${daemon}
@@ -134,15 +134,13 @@ s_journalctl() {
 
 s_list_services () { $_systemctl --no-legend -t service list-unit-files | grep -v static  \
 	|	{ 
-			while read -r service daemonstate ; do
+			while read -r daemon daemonstate ; do
 				
 				# ignore symlinks like crond.service (they dont work anyway, you can start/stop but not enable/disable)
-				if [[ -h "/usr/lib/systemd/system/$service" ]]; then continue; fi
+				if [[ -h "/usr/lib/systemd/system/$daemon" ]]; then continue; fi
 				
 				# support for "@" stuff like dhcpcd@eth0 dhcpcd@eth1 ...
-				daemon="${service}"
 				if [[ "${daemon:${#daemon}-1}" == "@" ]]; then
-					if s_hidedaemon ${daemon}; then continue; fi;
 					daemons=$(${_systemctl} --no-legend -t service | grep -o "${daemon}[A-Za-z0-9_/=:-]*")
 					if [[ "${daemons[0]}" == "" ]]; then daemons=($daemon); fi # when no instance of "@" service is started it appears just as dhcpcd@
 				else
@@ -150,11 +148,11 @@ s_list_services () { $_systemctl --no-legend -t service list-unit-files | grep -
 				fi
 				
 				for daemon in $daemons; do
-					if s_hidedaemon ${daemon}; then continue; fi;
+					if s_hidedaemon "${daemon/.service/}"; then continue; fi;
 					if [[ "${1}" == "list" ]]; then
 						echo -en "\e[1;34m[";
 					elif [[ "${1}" == "enabled" || "${1}" == "disabled" ]]; then
-						if [[ "${1}" == "${daemonstate}" ]]; then printf "%s\n" "${daemon}"; fi
+						if [[ "${1}" == "${daemonstate}" ]]; then printf "%s\n" "${daemon/.service/}"; fi
 						continue
 					fi
 					${_systemctl} -q is-active "${daemon}" >& /dev/null
@@ -162,13 +160,13 @@ s_list_services () { $_systemctl --no-legend -t service list-unit-files | grep -
 							if [[ "${1}" == "list" ]]; then
 								echo -en "\e[1;37mSTARTED"
 							else
-								if [[ "${1}" != "stopped" ]]; then printf "%s\n" "${daemon}"; fi
+								if [[ "${1}" != "stopped" ]]; then printf "%s\n" "${daemon/.service/}"; fi
 							fi
 					else
 							if [[ "${1}" == "list" ]]; then
 								echo -en "\e[1;31mSTOPPED"
 							else
-								if [[ "${1}" != "started" ]]; then printf "%s\n" "${daemon}"; fi
+								if [[ "${1}" != "started" ]]; then printf "%s\n" "${daemon/.service/}"; fi
 							fi
 					fi
 					if [[ "${1}" != "list" ]]; then continue; fi
@@ -181,7 +179,7 @@ s_list_services () { $_systemctl --no-legend -t service list-unit-files | grep -
 							echo -n "    "
 					fi
 					echo -en "\e[1;34m]\e[0m "
-					echo "$daemon"
+					echo "${daemon/.service/}"
 				done
 
 			done;
