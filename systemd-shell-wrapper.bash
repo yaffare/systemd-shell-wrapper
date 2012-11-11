@@ -207,8 +207,7 @@ s_hidedaemon() {
 
 # $1: optional type
 s_bashcompletion_list_by_type () { 
-	unitType=$(get_unity_type "$1" service)
-	${_systemctl} --no-legend -t $unitType list-unit-files  \
+	${_systemctl} --no-legend -t $1 list-unit-files  \
 		|	{ while read -r a b  ; do printf "%s\n" "${a}"; done; }
 }
 
@@ -216,7 +215,7 @@ s_bashcompletion () {
 	local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]}
 	local verb comps
 	
-	if [[ "${1}" == "targets" ]]; then comps=$( s_bashcompletion_list_by_type "target" );	else comps=$( s_list_services "${1}" ); fi
+	if [[ "${1}" == "target" ]]; then comps=$( s_bashcompletion_list_by_type "target" );	else comps=$( s_list_services "${1}" ); fi
 	COMPREPLY=( $(compgen -W '$comps' -- "$cur") )
 }
 
@@ -227,7 +226,7 @@ s_bashcompletion_reload () { s_bashcompletion "started"; return 0; }
 s_bashcompletion_enable () { s_bashcompletion "disabled"; return 0; }
 s_bashcompletion_disable () { s_bashcompletion "enabled"; return 0; }
 s_bashcompletion_status () { s_bashcompletion ""; return 0; }
-s_bashcompletion_wants () { s_bashcompletion "targets"; return 0; }
+s_bashcompletion_wants () { s_bashcompletion "target"; return 0; }
 s_bashcompletion_log () { s_bashcompletion ""; return 0; }
 
 complete -F s_bashcompletion_start s.start
@@ -238,4 +237,4 @@ complete -F s_bashcompletion_enable s.enable
 complete -F s_bashcompletion_disable s.disable
 complete -F s_bashcompletion_status s.status
 complete -F s_bashcompletion_wants s.wants
-complete -F s_bashcompletion_log s.log#
+complete -F s_bashcompletion_log s.log
