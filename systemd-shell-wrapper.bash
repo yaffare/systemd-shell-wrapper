@@ -140,8 +140,8 @@ s_list_services () { $_systemctl --no-legend -t service list-unit-files | grep -
 				if [[ -h "/usr/lib/systemd/system/$daemon" ]]; then continue; fi
 				
 				# support for "@" stuff like dhcpcd@eth0 dhcpcd@eth1 ...
-				if [[ "${daemon:${#daemon}-1}" == "@" ]]; then
-					daemons=$(${_systemctl} --no-legend -t service | grep -o "${daemon}[A-Za-z0-9_/=:-]*")
+				if [[ "${daemon:${#daemon}-9}" == "@.service" ]]; then
+					daemons=$(${_systemctl} --no-legend -t service | grep -o "${daemon/.service/}[A-Za-z0-9_/=:.-]*")
 					if [[ "${daemons[0]}" == "" ]]; then daemons=($daemon); fi # when no instance of "@" service is started it appears just as dhcpcd@
 				else
 					daemons=($daemon)
